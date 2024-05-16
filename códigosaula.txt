@@ -1,0 +1,371 @@
+barras.html:
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+  <script type="text/javascript">
+     google.charts.load('current', {'packages':['bar']});
+     google.charts.setOnLoadCallback(drawChart);
+
+
+     function drawChart() {
+       var data = google.visualization.arrayToDataTable([
+         ['Tipo de Software', 'Quantidade de Softwares']
+         {% for dado in dados %}
+          , [ '{{ dado.nme_tipo }}' , {{ dado.qtd }} ]
+         {% endfor %}
+       ]);
+
+
+       var options = {
+         chart: {
+             title: "Tipo x Quantidade de Softwares",
+             width: 600,
+             height: 400,
+             subtitle: 'Mostra todos os tipos de software e quantos temos de cada um',
+         },
+         bars: 'horizontal' // Required for Material Bar Charts.
+       };
+
+
+       var chart = new google.charts.Bar(document.getElementById('divBarras'));
+
+
+       chart.draw(data, google.charts.Bar.convertOptions(options));
+     }
+  </script>
+  <title>Gráfico de Barras</title>
+</head>
+<body>
+  <h1 style="color: brown">Gráfico de Barras</h1>
+  <hr/>
+  <div id="divBarras">
+
+
+  </div>
+  <hr/>
+  <br/>
+</body>
+</html>
+
+org.html:
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+        google.charts.load('current', {packages:["orgchart"]});
+        google.charts.setOnLoadCallback(drawChart);
+
+        function drawChart() {
+            var data = new google.visualization.DataTable();
+            data.addColumn('string', 'Nome');
+            data.addColumn('string', 'Superior');
+            data.addColumn('string', 'ToolTip');
+
+            data.addRows([
+                {% for dado in dados %}
+                [{v: '{{ dado.id }}', f: '{{ dado.nme_tipo }}'}, '', '{{ dado.Tooltip }}'],
+                {% if dado.subdados %}
+                {% for subdado in dado.subdados %}
+                [{v: '{{ subdado.nme_estado }}', f: '{{ subdado.nme_estado }}'}, '{{ dado.id }}', '{{ subdado.Tooltip }}'],
+                {% endfor %}
+                {% endif %}
+                {% endfor %}
+            ]);
+
+            var chart = new google.visualization.OrgChart(document.getElementById('divOrg'));
+            chart.draw(data, {allowHtml:true});
+        }
+    </script>
+    <title>Organograma</title>
+</head>
+<body>
+    <h1 style="color: brown">Organograma</h1>
+    <hr>
+    <div id="divOrg"></div>
+    <br>
+    <hr>
+    <br>
+</body>
+</html>
+
+pizza.html:
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+        google.charts.load('current', {'packages':['corechart']});
+        google.charts.setOnLoadCallback(drawChart);
+
+        function drawChart() {
+            var data = google.visualization.arrayToDataTable([
+                ['País', 'Número de Estados'],
+                {% for pais, num_estados in dados %}
+                ['{{ pais }}', {{ num_estados }}],
+                {% endfor %}
+            ]);
+
+            var options = {
+                title: 'Número de Estados por País',
+                is3D: true,
+            };
+
+            var chart = new google.visualization.PieChart(document.getElementById('piechart_3d'));
+            chart.draw(data, options);
+        }
+    </script>
+    <title>Gráfico de Pizza</title>
+</head>
+<body>
+    <h1 style="color: brown">Gráfico de Pizza</h1>
+    <hr/>
+    <div id="piechart_3d" style="width: 900px; height: 500px;"></div>
+    <hr/>
+    <br/>
+</body>
+</html>
+
+app.py:
+
+from sql.banco import SQL
+from flask import Flask, render_template
+
+app = Flask(__name__)
+
+
+@app.route('/barras')
+def barras():
+    # Recuperando Tipos de Software existentes na base de dados
+    mysql = SQL()
+    comando = "SELECT nme_tipo, COUNT(idt_software) AS qtd FROM tb_tipo JOIN tb_software ON idt_tipo=cod_tipo GROUP BY nme_tipo;"
+    dados = mysql.get_list(comando, ())
+    return render_template('barras.html', dados=dados)
+
+
+@app.route('/org')
+def org():
+    # Recuperando Tipos de Software existentes na base de dados
+    mysql = SQL()
+    comando = "SELECT * FROM tb_tipo ORDER BY nme_tipo;"
+    lista_tipos = mysql.get_list(comando, ())
+
+    comandoSoft = "SELECT nme_software, ver_software FROM tb_software WHERE cod_tipo=%s ORDER BY nme_software;"
+    for tipo in lista_tipos:
+        tipo['softwares'] = mysql.get_list(comandoSoft, [tipo['idt_tipo']])
+
+    return render_template('org.html', dados=lista_tipos)
+
+@app.route('/pizza')
+def pizza():
+    mysql = SQL()
+    paises = mysql.get_paises()
+    dados_pizza = []
+    for pais in paises:
+        estados = mysql.get_estados_por_pais(pais['id'])
+        dados_pizza.append((pais['nome'], len(estados)))
+    return render_template('pizza.html', dados=dados_pizza)
+
+@app.route('/org')
+def org():
+    mysql = SQL()
+    paises = mysql.get_paises()
+    dados_org = [{'id': 'T', 'nme_tipo': '<b>Países</b>', 'Tooltip': 'Hierarquia de Países'}]
+    for pais in paises:
+        estados = mysql.get_estados_por_pais(pais['id'])
+        subdados = [{'nme_estado': estado['nome'], 'Tooltip': f'{estado["nome"]} - {pais["nome"]}'}
+                    for estado in estados]
+        dados_org.append({'id': f'pais_{pais["id"]}', 'nme_tipo': pais['nome'], 'Tooltip': pais['nome'],
+                          'subdados': subdados})
+    return render_template('org.html', dados=dados_org)
+
+if __name__ == '__main__':
+    app.run(debug=1)
+
+banco.py:
+
+import mysql.connector
+
+
+class SQL:
+    def __init__(self, servidor='localhost', usr='root', pwd='ceub123456', esquema='test'):
+        self.cnx = mysql.connector.connect(host=servidor,
+                                           user=usr,
+                                           password=pwd,
+                                           database=esquema)
+
+    def insert(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        self.cnx.commit()
+        idt = cs.lastrowid
+        cs.close()
+        return idt
+
+    def upd_del(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        self.cnx.commit()
+        num = cs.rowcount
+        cs.close()
+        return num
+
+    def get_cursor(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        return cs
+
+    def get_int(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        ret = int(cs.fetchone()[0])
+        cs.close()
+        return ret
+
+    def get_float(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        ret = float(cs.fetchone()[0])
+        cs.close()
+        return ret
+
+    def get_date(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        data = cs.fetchone()[0]
+        ret = str(data.day).zfill(2) + "/" + str(data.month).zfill(2) + "/" + str(data.year)
+        cs.close()
+        return ret
+
+    def get_time(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        hora = cs.fetchone()[0]
+        total_segundos = hora.total_seconds()
+        horas = int(total_segundos // 3600)
+        minutos = int((total_segundos % 3600) // 60)
+        segundos = int(total_segundos % 60)
+        ret = f"{horas:02}:{minutos:02}:{segundos:02}"
+        cs.close()
+        return ret
+
+    def get_string(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        ret = str(cs.fetchone()[0])
+        cs.close()
+        return ret
+
+    def get_object(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        dados = cs.fetchone()
+        if dados is None:
+            dic = None
+        else:
+            md = cs.description
+            dic = {col[0]: valor for col, valor in zip(md, dados)}
+        cs.close()
+        return dic
+
+    def get_list(self, comando, params=[]):
+        cs = self.cnx.cursor()
+        cs.execute(comando, params)
+        md = cs.description
+        list = []
+        for reg in cs:
+            dic = {col[0]: valor for col, valor in zip(md, reg)}
+            list.append(dic)
+        cs.close()
+        return list
+
+
+    def get_paises(self):
+        comando = "SELECT * FROM Pais;"
+        return self.get_list(comando)
+
+    def get_estados_por_pais(self, id_pais):
+        comando = "SELECT * FROM Estado WHERE codigo_pais = %s;"
+        return self.get_list(comando, (id_pais,))
+
+
+tabelas.py:
+
+from sql.banco import SQL
+
+mysql = SQL()
+
+comando = "DROP TABLE IF EXISTS tb_software;"
+
+if mysql.upd_del(comando, ()) == 0:
+    print("Tabela de software excluída com sucesso!")
+
+comando = "DROP TABLE IF EXISTS tb_tipo;"
+
+if mysql.upd_del(comando, ()) == 0:
+    print("Tabela de tipo excluída com sucesso!")
+
+comando = '''CREATE TABLE tb_tipo (idt_tipo INT AUTO_INCREMENT PRIMARY KEY,
+        nme_tipo VARCHAR(50) NOT NULL);'''
+
+if mysql.upd_del(comando, ()) == 0:
+    print("Tabela de tipo criado com sucesso!")
+
+comando = '''CREATE TABLE tb_software (idt_software INT AUTO_INCREMENT PRIMARY KEY,
+        nme_software VARCHAR(50) NOT NULL,
+        ver_software VARCHAR(8) NOT NULL,
+        cod_tipo INT NOT NULL,
+        CONSTRAINT fk_tipo_software FOREIGN KEY (cod_tipo) REFERENCES tb_tipo(idt_tipo));'''
+
+if mysql.upd_del(comando, ()) == 0:
+    print("Tabela de software criado com sucesso!")
+
+comando = '''INSERT INTO tb_tipo(nme_tipo) VALUES
+        ('Linguagem'), ('SGBD'), ('Sistema Operacional');'''
+
+if mysql.upd_del(comando, ()) == 3:
+    print("Tipos cadastrados com sucesso!")
+
+comando = '''INSERT INTO tb_software(nme_software, ver_software, cod_tipo) VALUES
+        ('Pascal', '7.0', 1), ('Python', '3.7', 1), ('Java', '1.8', 1), ('Postgres', '9', 2),
+        ('MySQL', '5.6', 2), ('Android', '10', 3), ('Linux', 'RedHat', 3), ('Windows', '10', 3);'''
+
+if mysql.upd_del(comando, ()) == 8:
+    print("Softwares cadastrados com sucesso!")
+
+Tabelassql:
+
+CREATE TABLE Pais (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL
+);
+
+-- Criação da tabela Estado
+CREATE TABLE Estado (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    codigo_pais INT,
+    FOREIGN KEY (codigo_pais) REFERENCES Pais(id)
+);
+
+-- Inserção de alguns países
+INSERT INTO Pais (nome) VALUES
+('Brasil'),
+('Estados Unidos'),
+('Canadá');
+
+-- Inserção de alguns estados
+INSERT INTO Estado (nome, codigo_pais) VALUES
+('São Paulo', 1),
+('Rio de Janeiro', 1),
+('Texas', 2),
+('Califórnia', 2),
+('Ontário', 3),
+('Quebec', 3);
